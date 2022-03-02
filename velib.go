@@ -9,29 +9,47 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 )
 
 var v *Velib
 
 type Velib struct {
-	ready   bool
-	failed  bool
+	// States
+	ready  bool
+	failed bool
+
+	// Configuration
 	verbose bool
+	port    int
+
+	// Functions
+	process func(http.ResponseWriter, *http.Request)
 }
 
-func Init() *Velib {
+func Init() {
+	announce("Veritone Engines Library (VELIB) Initialized")
+	v = New()
+}
+
+func New() *Velib {
+	announce("Creating new instance")
 	v := new(Velib)
 	v.ready = false
 	v.failed = false
 	v.verbose = false
-
+	v.port = 8080
+	v.process = func(responseWriter http.ResponseWriter, request *http.Request) {}
 	return v
 }
 
 func Run() {
-	l("Veritone Engines Library (VELIB)")
-	if err := http.ListenAndServe("0.0.0.0:8080", server()); err != nil {
+	port := v.getPort()
+	l("Starting Engine Server on port", port)
+	err := http.ListenAndServe("0.0.0.0:"+strconv.Itoa(port), server())
+	if err != nil {
+		l("Error starting server: ")
 		fmt.Fprintf(os.Stderr, "exif: %s", err)
 		os.Exit(1)
 	}
@@ -50,13 +68,13 @@ func server() *http.ServeMux {
 // 500 = Engine has failed
 func handleReady(w http.ResponseWriter, r *http.Request) {
 	var readyStatus int
-	if v.ready {
+	if v.getReady() {
 		readyStatus = http.StatusOK // 200
 	} else {
 		readyStatus = http.StatusServiceUnavailable // 503
 	}
 
-	if v.failed {
+	if v.getFailed() {
 		readyStatus = http.StatusInternalServerError // 500
 	}
 
@@ -69,7 +87,8 @@ func handleProcess(responseWriter http.ResponseWriter, request *http.Request) {
 	request.ParseMultipartForm(512 * 1024 * 1024)
 	start := time.Now()
 
-	// How do we inject code here to handle the request?
+	// inject into this part of the process
+	v.process(responseWriter, request)
 
 	duration := time.Since(start)
 	l("Processing took ", duration)
@@ -106,4 +125,14 @@ func sendHeartbeat(callback string, status string, info map[string]string) {
 	// consume the response
 	defer resp.Body.Close()
 	io.Copy(ioutil.Discard, resp.Body)
+}
+
+func announce(text string) {
+	log.Println("[VELIB] ", text)
+}
+
+func l(text ...interface{}) {
+	if v.getVerbose() {
+		log.Println("[VELIB] ", text)
+	}
 }
